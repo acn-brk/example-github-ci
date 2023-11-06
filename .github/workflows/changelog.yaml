@@ -1,0 +1,101 @@
+name: "Changelog via Jira"
+
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+permissions: read-all
+
+jobs:
+  jira:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+      - name: Install git, jira for python
+        run: |
+          pip3 install -q GitPython==3.1.40 jira==3.5.2
+      - name: Generate changelog
+        shell: python
+        env:
+          JIRA_SVCACC_TOKEN: ${{ secrets.JIRA_SVCACC_TOKEN }}
+          JIRA_SVCACC_EMAIL: ${{ secrets.JIRA_SVCACC_EMAIL }}
+        run: |
+          import os
+          import re
+          import git
+          from jira import JIRA
+          import datetime
+
+          def getTicketIDs() -> tuple[str, str]:
+              repo = git.Repo(search_parent_directories=True)
+              sorted_tags = sorted(repo.tags, key=lambda t: t.commit.committed_datetime)
+              if len(sorted_tags) < 2 :
+                  print("Could not find 2 tags or more, e.g. v1 for GA followed by a release.")
+                  quit(1)
+              latest_tag, prev_tag = sorted_tags[-1], sorted_tags[-2]
+              commits = repo.iter_commits(f"{prev_tag}..{latest_tag}")
+              regexPattern = r'(?:^\[)(\b[A-Z][A-Z0-9_]+-[1-9][0-9]*)(?:\])'
+
+              ticket_IDs : list[str] = []
+              for commit in commits:
+                  regexMatch = re.search(regexPattern, commit.message)
+                  if regexMatch:
+                      ticket_IDs.append(regexMatch.group(1))
+              release_tag = str(latest_tag)
+              return ticket_IDs, release_tag
+
+
+          def jiraMessages(ticket_IDs : list[str]) -> list[str]:
+              jira_server = {'server': 'https://kirici.atlassian.net'}
+              jira_email = os.environ['JIRA_SVCACC_EMAIL']
+              jira_token = os.environ['JIRA_SVCACC_TOKEN']
+              jira = JIRA(jira_server, basic_auth=(jira_email, jira_token))
+
+              business_field_list : list[str] = []
+              for ID in ticket_IDs:
+                  business_field_list.append(jira.issue(ID).fields.customfield_10094)
+              return business_field_list
+
+
+          def insertNewChanges(issues_list: list[str], release_tag: str):
+              tag_start, tag_end = "## [", "] "
+              changelog_description = '# Changelog\n\nAll notable changes to this project will be documented in this file.\n\n'
+              changelog_version_header = tag_start + release_tag + tag_end + datetime.date.today().strftime("%Y-%m-%d") + "\n"
+
+              new_version_block = changelog_version_header
+              for issue_msg in issues_list:
+                  new_version_block += "- " + issue_msg + "\n"
+              if not os.path.exists("CHANGELOG.md"):
+                print("No CHANGELOG.md file found. Creating an empty one.")
+                open("CHANGELOG.md", 'w').close()
+              f = open("CHANGELOG.md", "r")
+              exChangelog = ""
+              for line in f:
+                  if line.startswith(tag_start):     # do not read until tags appear
+                      exChangelog += line            # add found tag header
+                      for line in f:                 # read rest
+                          exChangelog += line
+              f.close()
+
+              f = open("CHANGELOG.md", "w+")
+              f.writelines(changelog_description)
+              f.writelines(new_version_block + "\n")
+              f.writelines(exChangelog)
+              f.close()
+
+
+          if __name__ == "__main__":
+              ticketIDs, release_tag = getTicketIDs()
+              msgs = jiraMessages(ticketIDs)
+              insertNewChanges(msgs, release_tag)
+
+      - name: Print new changelog
+        run: |
+          cat CHANGELOG.md
