@@ -46,6 +46,8 @@ jobs:
           esac
           echo "NEXT_PROJECT_VERSION=${NEXT_PROJECT_VERSION}" >> "$GITHUB_ENV"
       - name: Create Tag
+        env:
+          GITHUB_TOKEN: ${{ secrets.PATOKEN }}
         run: |
           git config --global user.name "gitBot"
           git config --global user.email ${{ github.repository_id }}+git-bot[bot]@users.noreply.github.com
