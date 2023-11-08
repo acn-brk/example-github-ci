@@ -148,4 +148,4 @@ jobs:
           git config --global user.name "gitBot"
           git config --global user.email ${{ github.repository_id }}+git-bot[bot]@users.noreply.github.com
           git commit -m "Jiralog for v$(git describe --tags --abbrev=0)"
-          git push --tags
+          git push && git push --tags
