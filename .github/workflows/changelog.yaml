@@ -4,10 +4,11 @@ on:
   push:
     tags:
       - '[0-9]+.[0-9]+.[0-9]+'
+
 permissions: read-all
 
 jobs:
-  jira:
+  jiralog:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -98,4 +99,8 @@ jobs:
 
       - name: Print new changelog
         run: |
-          cat CHANGELOG.md
+          git add -u
+          git config --global user.name "gitBot"
+          git config --global user.email ${{ github.repository_id }}+git-bot[bot]@users.noreply.github.com
+          git commit "Jiralog for v${{ github.ref_name }}"
+          git push --follow-tags origin ${{ github.event.repository.default_branch }} "${NEXT_PROJECT_VERSION}"
